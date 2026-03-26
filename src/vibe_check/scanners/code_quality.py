@@ -116,95 +116,75 @@ class CodeQualityScanner(BaseScanner):
         content = fi.content
         if not content:
             return
-
         rel_path = _rel(fi.path, project_path)
         lines = content.splitlines()
-        line_count = len(lines)
-
-        # CQ-001: Long functions
         tree = python_asts.get(fi.path)
+        self._check_long_functions(fi, content, tree, rel_path, findings)
+        self._check_long_file(len(lines), rel_path, findings)
+        self._check_deep_nesting(fi, content, rel_path, findings)
+        self._check_todos(lines, rel_path, findings)
+
+    def _check_long_functions(
+        self, fi: FileInfo, content: str, tree: ast.Module | None,
+        rel: str, findings: list[Finding],
+    ) -> None:
         if tree is not None:
             for name, lineno, _, func_lines in get_functions(tree):
                 if func_lines > 50:
                     findings.append(Finding(
-                        rule_id="CQ-001",
-                        category="code_quality",
-                        severity="warn",
+                        rule_id="CQ-001", category="code_quality", severity="warn",
                         message=f"Function '{name}' is {func_lines} lines (>50)",
-                        file_path=rel_path,
-                        line_number=lineno,
+                        file_path=rel, line_number=lineno,
                         suggestion="Break into smaller, focused functions",
                     ))
-
         if fi.language in ("javascript", "typescript"):
             for name, lineno, func_lines in _count_js_function_lines(content):
                 if func_lines > 50:
                     findings.append(Finding(
-                        rule_id="CQ-001",
-                        category="code_quality",
-                        severity="warn",
+                        rule_id="CQ-001", category="code_quality", severity="warn",
                         message=f"Function '{name}' is ~{func_lines} lines (>50)",
-                        file_path=rel_path,
-                        line_number=lineno,
+                        file_path=rel, line_number=lineno,
                         suggestion="Break into smaller, focused functions",
                     ))
 
-        # CQ-002: Long files
+    def _check_long_file(self, line_count: int, rel: str, findings: list[Finding]) -> None:
         if line_count > 500:
             findings.append(Finding(
-                rule_id="CQ-002",
-                category="code_quality",
-                severity="warn",
-                message=f"File is {line_count} lines (>500)",
-                file_path=rel_path,
+                rule_id="CQ-002", category="code_quality", severity="warn",
+                message=f"File is {line_count} lines (>500)", file_path=rel,
                 suggestion="Split into smaller, focused modules",
             ))
 
-        # CQ-003: Deep nesting
+    def _check_deep_nesting(
+        self, fi: FileInfo, content: str, rel: str, findings: list[Finding],
+    ) -> None:
         if fi.language == "python":
-            deep_lines = _max_indent_depth_python(content)
-            if deep_lines:
-                worst = max(deep_lines, key=lambda x: x[1])
-                findings.append(Finding(
-                    rule_id="CQ-003",
-                    category="code_quality",
-                    severity="warn",
-                    message=f"Deeply nested code ({worst[1]} levels) detected",
-                    file_path=rel_path,
-                    line_number=worst[0],
-                    suggestion="Reduce nesting with early returns, guard clauses, or extraction",
-                ))
+            deep = _max_indent_depth_python(content)
         elif fi.language in ("javascript", "typescript"):
-            deep_lines = _max_brace_depth_js(content)
-            if deep_lines:
-                worst = max(deep_lines, key=lambda x: x[1])
-                findings.append(Finding(
-                    rule_id="CQ-003",
-                    category="code_quality",
-                    severity="warn",
-                    message=f"Deeply nested code ({worst[1]} brace levels) detected",
-                    file_path=rel_path,
-                    line_number=worst[0],
-                    suggestion="Reduce nesting with early returns or extraction",
-                ))
-
-        # CQ-004: Excessive TODO/FIXME/HACK comments
-        todo_count = sum(1 for line in lines if _TODO_PATTERN.search(line))
-        if todo_count > 10:
+            deep = _max_brace_depth_js(content)
+        else:
+            return
+        if deep:
+            worst = max(deep, key=lambda x: x[1])
+            label = "brace levels" if fi.language != "python" else "levels"
             findings.append(Finding(
-                rule_id="CQ-004",
-                category="code_quality",
-                severity="fail",
-                message=f"File has {todo_count} TODO/FIXME/HACK comments (>10)",
-                file_path=rel_path,
+                rule_id="CQ-003", category="code_quality", severity="warn",
+                message=f"Deeply nested code ({worst[1]} {label}) detected",
+                file_path=rel, line_number=worst[0],
+                suggestion="Reduce nesting with early returns, guard clauses, or extraction",
+            ))
+
+    def _check_todos(self, lines: list[str], rel: str, findings: list[Finding]) -> None:
+        count = sum(1 for line in lines if _TODO_PATTERN.search(line))
+        if count > 10:
+            findings.append(Finding(
+                rule_id="CQ-004", category="code_quality", severity="fail",
+                message=f"File has {count} TODO/FIXME/HACK comments (>10)", file_path=rel,
                 suggestion="Resolve outstanding TODOs before production deployment",
             ))
-        elif todo_count > 5:
+        elif count > 5:
             findings.append(Finding(
-                rule_id="CQ-004",
-                category="code_quality",
-                severity="warn",
-                message=f"File has {todo_count} TODO/FIXME/HACK comments (>5)",
-                file_path=rel_path,
+                rule_id="CQ-004", category="code_quality", severity="warn",
+                message=f"File has {count} TODO/FIXME/HACK comments (>5)", file_path=rel,
                 suggestion="Address outstanding TODOs to reduce technical debt",
             ))

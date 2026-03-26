@@ -73,83 +73,72 @@ class ArchitectureScanner(BaseScanner):
         content = fi.content
         if not content:
             return
-
         rel_path = _rel(fi.path, project_path)
-        lines = content.splitlines()
-        line_count = len(lines)
+        line_count = len(content.splitlines())
+        tree = python_asts.get(fi.path)
+        self._check_god_file(line_count, rel_path, findings)
+        self._check_error_handling(fi, content, tree, line_count, rel_path, findings)
+        self._check_bare_except(tree, rel_path, findings)
+        self._check_type_hints(fi, content, tree, line_count, rel_path, findings)
 
-        # ARC-001: God files (>500 lines)
+    def _check_god_file(self, line_count: int, rel: str, findings: list[Finding]) -> None:
         if line_count > 500:
             findings.append(Finding(
-                rule_id="ARC-001",
-                category="architecture",
-                severity="warn",
+                rule_id="ARC-001", category="architecture", severity="warn",
                 message=f"Large file with {line_count} lines — possible god file",
-                file_path=rel_path,
-                suggestion="Split into smaller modules with clear responsibilities",
+                file_path=rel, suggestion="Split into smaller modules with clear responsibilities",
             ))
 
-        tree = python_asts.get(fi.path)
-
-        # ARC-002: Missing error handling
+    def _check_error_handling(
+        self, fi: FileInfo, content: str, tree: ast.Module | None,
+        line_count: int, rel: str, findings: list[Finding],
+    ) -> None:
         if fi.language == "python" and tree is not None:
-            # Only check non-trivial files (>20 lines, not __init__.py)
-            if line_count > 20 and fi.path.stem != "__init__":
-                if not _has_try_except(tree):
-                    findings.append(Finding(
-                        rule_id="ARC-002",
-                        category="architecture",
-                        severity="info",
-                        message="No try/except blocks found in Python file",
-                        file_path=rel_path,
-                        suggestion="Add error handling for I/O, network, and parsing operations",
-                    ))
-        elif fi.language in ("javascript", "typescript"):
-            if line_count > 20:
-                if not _TRY_CATCH_JS.search(content):
-                    findings.append(Finding(
-                        rule_id="ARC-002",
-                        category="architecture",
-                        severity="info",
-                        message="No try/catch blocks found in JS/TS file",
-                        file_path=rel_path,
-                        suggestion="Add error handling for async operations and external calls",
-                    ))
-
-        # ARC-003: Bare except clauses
-        if tree is not None:
-            for lineno in _has_bare_except(tree):
+            if line_count > 20 and fi.path.stem != "__init__" and not _has_try_except(tree):
                 findings.append(Finding(
-                    rule_id="ARC-003",
-                    category="architecture",
-                    severity="warn",
-                    message="Bare except clause — catches all exceptions including SystemExit",
-                    file_path=rel_path,
-                    line_number=lineno,
-                    suggestion="Specify exception type: except ValueError: or except Exception:",
+                    rule_id="ARC-002", category="architecture", severity="info",
+                    message="No try/except blocks found in Python file", file_path=rel,
+                    suggestion="Add error handling for I/O, network, and parsing operations",
+                ))
+        elif fi.language in ("javascript", "typescript") and line_count > 20:
+            if not _TRY_CATCH_JS.search(content):
+                findings.append(Finding(
+                    rule_id="ARC-002", category="architecture", severity="info",
+                    message="No try/catch blocks found in JS/TS file", file_path=rel,
+                    suggestion="Add error handling for async operations and external calls",
                 ))
 
-        # ARC-004: No typing imports in Python files >50 lines
-        if fi.language == "python" and tree is not None and line_count > 50:
-            imports = set(get_imports(tree))
-            has_typing = bool(imports & _TYPING_MODULES)
-            # Also check for inline type hints via annotations
-            has_annotations = "from __future__ import annotations" in content
-            if not has_typing and not has_annotations:
-                # Check if there are any : type annotations in function defs
-                has_inline_hints = any(
-                    isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and (node.returns is not None or any(
-                        a.annotation is not None for a in node.args.args
-                    ))
-                    for node in ast.walk(tree)
-                )
-                if not has_inline_hints:
-                    findings.append(Finding(
-                        rule_id="ARC-004",
-                        category="architecture",
-                        severity="info",
-                        message="No type hints found in Python file over 50 lines",
-                        file_path=rel_path,
-                        suggestion="Add type hints to improve code clarity and catch bugs",
-                    ))
+    def _check_bare_except(
+        self, tree: ast.Module | None, rel: str, findings: list[Finding],
+    ) -> None:
+        if tree is None:
+            return
+        for lineno in _has_bare_except(tree):
+            findings.append(Finding(
+                rule_id="ARC-003", category="architecture", severity="warn",
+                message="Bare except clause — catches all exceptions including SystemExit",
+                file_path=rel, line_number=lineno,
+                suggestion="Specify exception type: except ValueError: or except Exception:",
+            ))
+
+    def _check_type_hints(
+        self, fi: FileInfo, content: str, tree: ast.Module | None,
+        line_count: int, rel: str, findings: list[Finding],
+    ) -> None:
+        if fi.language != "python" or tree is None or line_count <= 50:
+            return
+        if set(get_imports(tree)) & _TYPING_MODULES:
+            return
+        if "from __future__ import annotations" in content:
+            return
+        has_inline = any(
+            isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and (n.returns is not None or any(a.annotation is not None for a in n.args.args))
+            for n in ast.walk(tree)
+        )
+        if not has_inline:
+            findings.append(Finding(
+                rule_id="ARC-004", category="architecture", severity="info",
+                message="No type hints found in Python file over 50 lines", file_path=rel,
+                suggestion="Add type hints to improve code clarity and catch bugs",
+            ))

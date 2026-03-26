@@ -30,7 +30,6 @@ def _grade_styled(grade: Grade) -> str:
 
 
 def _severity_counts(result: CategoryResult) -> tuple[int, int, int]:
-    """Count pass/warn/fail for a category (info counts as pass here)."""
     fails = sum(1 for f in result.findings if f.severity == "fail")
     warns = sum(1 for f in result.findings if f.severity == "warn")
     infos = sum(1 for f in result.findings if f.severity == "info")
@@ -41,12 +40,16 @@ def render(report: ScanReport, console: Console | None = None) -> None:
     """Render a scan report to the terminal using Rich."""
     if console is None:
         console = Console()
-
-    # Header
     console.print()
+    _render_header(report, console)
+    _render_category_table(report, console)
+    _render_top_findings(report, console)
+    _render_footer(report, console)
+
+
+def _render_header(report: ScanReport, console: Console) -> None:
     lang_parts = [f"{lang}: {count}" for lang, count in report.files_by_language.items()]
     lang_str = ", ".join(lang_parts) if lang_parts else "none detected"
-
     header_text = (
         f"[bold]Project:[/] {report.project_path}\n"
         f"[bold]Files scanned:[/] {report.total_files}\n"
@@ -54,7 +57,8 @@ def render(report: ScanReport, console: Console | None = None) -> None:
     )
     console.print(Panel(header_text, title="[bold cyan]Vibe Check[/]", border_style="cyan"))
 
-    # Category summary table
+
+def _render_category_table(report: ScanReport, console: Console) -> None:
     table = Table(title="Category Results", show_header=True, header_style="bold")
     table.add_column("Category", style="bold", min_width=15)
     table.add_column("Info", justify="right")
@@ -62,7 +66,6 @@ def render(report: ScanReport, console: Console | None = None) -> None:
     table.add_column("Fail", justify="right")
     table.add_column("Score", justify="right")
     table.add_column("Grade", justify="center")
-
     for result in report.categories:
         infos, warns, fails = _severity_counts(result)
         table.add_row(
@@ -73,58 +76,48 @@ def render(report: ScanReport, console: Console | None = None) -> None:
             str(result.score),
             _grade_styled(result.grade),
         )
-
     console.print(table)
     console.print()
 
-    # Top findings
+
+def _render_top_findings(report: ScanReport, console: Console) -> None:
     all_findings = []
     for result in report.categories:
         all_findings.extend(result.findings)
-
-    # Sort: fail first, then warn, then info
     severity_order: dict[str, int] = {"fail": 0, "warn": 1, "info": 2}
     all_findings.sort(key=lambda f: severity_order.get(f.severity, 3))
     top = all_findings[:10]
+    if not top:
+        return
+    console.print("[bold]Top Findings:[/]")
+    for finding in top:
+        icon = _SEVERITY_ICONS.get(finding.severity, "")
+        location = ""
+        if finding.file_path:
+            location = f" [dim]{finding.file_path}"
+            if finding.line_number:
+                location += f":{finding.line_number}"
+            location += "[/]"
+        console.print(f"  {icon} [{finding.rule_id}] {finding.message}{location}")
+    if len(all_findings) > 10:
+        console.print(f"  [dim]... and {len(all_findings) - 10} more findings[/]")
+    console.print()
 
-    if top:
-        console.print("[bold]Top Findings:[/]")
-        for finding in top:
-            icon = _SEVERITY_ICONS.get(finding.severity, "")
-            location = ""
-            if finding.file_path:
-                location = f" [dim]{finding.file_path}"
-                if finding.line_number:
-                    location += f":{finding.line_number}"
-                location += "[/]"
-            console.print(
-                f"  {icon} [{finding.rule_id}] {finding.message}{location}"
-            )
-        if len(all_findings) > 10:
-            console.print(f"  [dim]... and {len(all_findings) - 10} more findings[/]")
-        console.print()
 
-    # Overall grade
+def _render_footer(report: ScanReport, console: Console) -> None:
     grade_color = _GRADE_COLORS.get(report.overall_grade, "white")
     grade_display = Text(f" {report.overall_grade} ", style=f"{grade_color} reverse")
     console.print(Panel(
         Text.assemble(
-            "Overall Grade: ",
-            grade_display,
-            f"  Score: {report.overall_score}/100",
+            "Overall Grade: ", grade_display, f"  Score: {report.overall_score}/100",
         ),
         border_style=grade_color.replace("bold ", ""),
     ))
-
-    # Scan time
     console.print(f"[dim]Scan completed in {report.total_scan_time_ms:.0f}ms[/]")
-
-    # Upsell for unlicensed
     if not report.licensed:
         console.print()
         console.print(
             "[dim]Unlock HIPAA compliance scanning: "
             "nyxtools.gumroad.com/l/vibe-check-pro[/]"
         )
-
     console.print()

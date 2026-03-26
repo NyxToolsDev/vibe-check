@@ -85,71 +85,13 @@ class DependenciesScanner(BaseScanner):
         req_file = project_path / "requirements.txt"
         if not req_file.is_file():
             return
-
         try:
             text = req_file.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             return
-
-        lines = text.splitlines()
-        unpinned: list[tuple[str, int]] = []
-        dep_count = 0
-
-        for i, line in enumerate(lines, 1):
-            stripped = line.strip()
-            if _COMMENT_OR_EMPTY.match(stripped):
-                continue
-            if _OPTION_LINE.match(stripped):
-                continue
-
-            dep_count += 1
-            # Check if version is pinned
-            pkg_name = stripped.split("[")[0]  # handle extras
-            if not _PINNED_PATTERN.search(pkg_name) and not _PINNED_PATTERN.search(stripped):
-                unpinned.append((stripped, i))
-
-        # DEP-002: Unpinned versions
-        if unpinned:
-            if len(unpinned) <= 3:
-                for pkg, lineno in unpinned:
-                    findings.append(Finding(
-                        rule_id="DEP-002",
-                        category="dependencies",
-                        severity="warn",
-                        message=f"Unpinned dependency: {pkg}",
-                        file_path="requirements.txt",
-                        line_number=lineno,
-                        suggestion="Pin version with == or use version ranges (>=, ~=)",
-                    ))
-            else:
-                findings.append(Finding(
-                    rule_id="DEP-002",
-                    category="dependencies",
-                    severity="warn",
-                    message=f"{len(unpinned)} dependencies without version constraints",
-                    file_path="requirements.txt",
-                    suggestion="Pin versions to ensure reproducible builds",
-                ))
-
-        # DEP-004: Too many dependencies
-        if dep_count > 50:
-            findings.append(Finding(
-                rule_id="DEP-004",
-                category="dependencies",
-                severity="fail",
-                message=f"Too many direct dependencies ({dep_count} in requirements.txt)",
-                file_path="requirements.txt",
-                suggestion="Review and remove unused dependencies",
-            ))
-        elif dep_count > 30:
-            findings.append(Finding(
-                rule_id="DEP-004",
-                category="dependencies",
-                severity="warn",
-                message=f"High number of direct dependencies ({dep_count} in requirements.txt)",
-                file_path="requirements.txt",
-                suggestion="Review dependencies — consider if all are necessary",
-            ))
+        unpinned, dep_count = _parse_requirements(text)
+        _report_unpinned_python(unpinned, findings)
+        _report_dep_count(dep_count, "requirements.txt", findings)
 
     def _check_package_json(
         self,
@@ -160,52 +102,70 @@ class DependenciesScanner(BaseScanner):
         pkg_file = project_path / "package.json"
         if not pkg_file.is_file():
             return
-
         try:
-            text = pkg_file.read_text(encoding="utf-8", errors="ignore")
-            data = json.loads(text)
+            data = json.loads(pkg_file.read_text(encoding="utf-8", errors="ignore"))
         except (OSError, json.JSONDecodeError):
             return
-
         deps = data.get("dependencies", {})
         dev_deps = data.get("devDependencies", {})
-        all_deps = {**deps, **dev_deps}
+        _report_unpinned_node({**deps, **dev_deps}, findings)
+        _report_dep_count(len(deps), "package.json", findings)
 
-        # DEP-003: Unpinned versions (wildcard or "latest")
-        unpinned: list[str] = []
-        for name, version in all_deps.items():
-            if not isinstance(version, str):
-                continue
-            if version in ("*", "latest"):
-                unpinned.append(name)
 
-        for name in unpinned:
+def _parse_requirements(text: str) -> tuple[list[tuple[str, int]], int]:
+    """Parse requirements.txt and return (unpinned_deps, total_count)."""
+    unpinned: list[tuple[str, int]] = []
+    dep_count = 0
+    for i, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if _COMMENT_OR_EMPTY.match(stripped) or _OPTION_LINE.match(stripped):
+            continue
+        dep_count += 1
+        pkg_name = stripped.split("[")[0]
+        if not _PINNED_PATTERN.search(pkg_name) and not _PINNED_PATTERN.search(stripped):
+            unpinned.append((stripped, i))
+    return unpinned, dep_count
+
+
+def _report_unpinned_python(unpinned: list[tuple[str, int]], findings: list[Finding]) -> None:
+    if not unpinned:
+        return
+    if len(unpinned) <= 3:
+        for pkg, lineno in unpinned:
             findings.append(Finding(
-                rule_id="DEP-003",
-                category="dependencies",
-                severity="warn",
+                rule_id="DEP-002", category="dependencies", severity="warn",
+                message=f"Unpinned dependency: {pkg}", file_path="requirements.txt",
+                line_number=lineno, suggestion="Pin version with == or use version ranges (>=, ~=)",
+            ))
+    else:
+        findings.append(Finding(
+            rule_id="DEP-002", category="dependencies", severity="warn",
+            message=f"{len(unpinned)} dependencies without version constraints",
+            file_path="requirements.txt", suggestion="Pin versions to ensure reproducible builds",
+        ))
+
+
+def _report_unpinned_node(all_deps: dict, findings: list[Finding]) -> None:
+    for name, version in all_deps.items():
+        if isinstance(version, str) and version in ("*", "latest"):
+            findings.append(Finding(
+                rule_id="DEP-003", category="dependencies", severity="warn",
                 message=f"Unpinned dependency in package.json: {name}",
                 file_path="package.json",
                 suggestion="Use a specific version range instead of * or latest",
             ))
 
-        # DEP-004: Too many direct dependencies
-        total = len(deps)
-        if total > 50:
-            findings.append(Finding(
-                rule_id="DEP-004",
-                category="dependencies",
-                severity="fail",
-                message=f"Too many direct dependencies ({total} in package.json)",
-                file_path="package.json",
-                suggestion="Review and remove unused dependencies",
-            ))
-        elif total > 30:
-            findings.append(Finding(
-                rule_id="DEP-004",
-                category="dependencies",
-                severity="warn",
-                message=f"High number of direct dependencies ({total} in package.json)",
-                file_path="package.json",
-                suggestion="Review dependencies — consider if all are necessary",
-            ))
+
+def _report_dep_count(total: int, source: str, findings: list[Finding]) -> None:
+    if total > 50:
+        findings.append(Finding(
+            rule_id="DEP-004", category="dependencies", severity="fail",
+            message=f"Too many direct dependencies ({total} in {source})",
+            file_path=source, suggestion="Review and remove unused dependencies",
+        ))
+    elif total > 30:
+        findings.append(Finding(
+            rule_id="DEP-004", category="dependencies", severity="warn",
+            message=f"High number of direct dependencies ({total} in {source})",
+            file_path=source, suggestion="Review dependencies — consider if all are necessary",
+        ))
