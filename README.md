@@ -2,9 +2,9 @@
 
 **Production-readiness scanner for AI-generated and vibe-coded projects.**
 
-[![PyPI](https://img.shields.io/pypi/v/vibe-check)](https://pypi.org/project/vibe-check/)
-[![Python](https://img.shields.io/pypi/pyversions/vibe-check)](https://pypi.org/project/vibe-check/)
-[![License](https://img.shields.io/pypi/l/vibe-check)](https://github.com/NyxToolsDev/vibe-check/blob/main/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/vibe-code-check)](https://pypi.org/project/vibe-code-check/)
+[![Python](https://img.shields.io/pypi/pyversions/vibe-code-check)](https://pypi.org/project/vibe-code-check/)
+[![License](https://img.shields.io/pypi/l/vibe-code-check)](https://github.com/NyxToolsDev/vibe-check/blob/main/LICENSE)
 
 AI-assisted coding is fast. Shipping it to production without checking for security holes, missing tests, and bad patterns is dangerous. **Vibe Check** scans your project in seconds and gives you a letter grade (A-F) across 6 categories.
 
@@ -26,7 +26,7 @@ $ vibe-check scan .
 ## Install
 
 ```bash
-pip install vibe-check
+pip install vibe-code-check
 ```
 
 Requires Python 3.10+.
@@ -131,7 +131,7 @@ vibe-check scan . --ci --threshold B
 # GitHub Actions
 - name: Vibe Check
   run: |
-    pip install vibe-check
+    pip install vibe-code-check
     vibe-check scan . --ci --threshold B
 ```
 
@@ -139,7 +139,7 @@ vibe-check scan . --ci --threshold B
 # GitLab CI
 vibe-check:
   script:
-    - pip install vibe-check
+    - pip install vibe-code-check
     - vibe-check scan . --ci --threshold B -f json -o vibe-report.json
   artifacts:
     paths:
