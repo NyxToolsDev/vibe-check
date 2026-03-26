@@ -153,6 +153,55 @@ def _check_ci_threshold(
         )
 
 
+@main.command()
+@click.argument("license_key")
+def activate(license_key: str) -> None:
+    """Activate a Pro license key for HIPAA compliance scanning.
+
+    After purchasing at nyxtools.gumroad.com, run:
+
+        vibe-check activate YOUR-LICENSE-KEY
+
+    Or set the environment variable:
+
+        export VIBE_CHECK_LICENSE_KEY=YOUR-LICENSE-KEY
+    """
+    console = Console()
+    console.print(f"[cyan]Validating license key...[/]")
+
+    valid = check_license(license_key)
+    if valid:
+        console.print("[bold green]License activated successfully![/]")
+        console.print("HIPAA compliance scanning is now unlocked.")
+        console.print(
+            "\n[dim]Tip: set VIBE_CHECK_LICENSE_KEY as an environment variable "
+            "so you don't need to pass it every time.[/]"
+        )
+    else:
+        console.print("[bold red]Invalid license key.[/]")
+        console.print(
+            "Please check your key and try again.\n"
+            "Purchase a Pro license at: [link]https://nyxtools.gumroad.com/l/vibe-check-pro[/]"
+        )
+        sys.exit(1)
+
+
+@main.command()
+def status() -> None:
+    """Show current license status."""
+    console = Console()
+    licensed = check_license()
+    if licensed:
+        console.print("[bold green]Pro license:[/] Active")
+        console.print("HIPAA compliance scanning is enabled.")
+    else:
+        console.print("[bold yellow]Free tier:[/] 5 of 6 scan categories available")
+        console.print(
+            "Upgrade to Pro for HIPAA compliance scanning: "
+            "[link]https://nyxtools.gumroad.com/l/vibe-check-pro[/]"
+        )
+
+
 def _write_file(path: str, content: str) -> None:
     """Write content to a file and print confirmation."""
     p = Path(path)
