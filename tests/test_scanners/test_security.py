@@ -43,6 +43,17 @@ class TestSQLInjection:
         findings = _scan(tmp_path, "db.py", code)
         assert not any(f.rule_id == "SEC-002" for f in findings)
 
+    def test_ignores_log_statements_with_sql_keywords(self, tmp_path: Path):
+        """logger.error(f'update error: {e}') should NOT trigger SQL injection."""
+        code = 'logger.error(f"Child update error: {e}", exc_info=True)'
+        findings = _scan(tmp_path, "routes.py", code)
+        assert not any(f.rule_id == "SEC-002" for f in findings)
+
+    def test_ignores_print_with_sql_keywords(self, tmp_path: Path):
+        code = 'print(f"Failed to delete record: {err}")'
+        findings = _scan(tmp_path, "app.py", code)
+        assert not any(f.rule_id == "SEC-002" for f in findings)
+
 
 class TestEvalExec:
     def test_detects_eval(self, tmp_path: Path):

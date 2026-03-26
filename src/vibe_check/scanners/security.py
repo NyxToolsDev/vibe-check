@@ -105,6 +105,17 @@ def _is_test_file(fi: FileInfo, project_path: Path) -> bool:
     return bool(_TEST_PATH_PATTERNS.search(rel_path))
 
 
+_LOG_STATEMENT = re.compile(
+    r"""^\s*(?:logger|logging)\.\w+\s*\(|^\s*(?:print|console\.(?:log|error|warn))\s*\(""",
+    re.IGNORECASE,
+)
+
+
+def _is_log_statement(line: str) -> bool:
+    """Check if a line is a log/print statement (not an actual SQL query)."""
+    return bool(_LOG_STATEMENT.search(line))
+
+
 def _is_pattern_definition(line: str) -> bool:
     """Check if a line is defining a regex pattern (not actual vulnerable code)."""
     stripped = line.strip()
@@ -202,7 +213,7 @@ class SecurityScanner(BaseScanner):
 
         # SEC-002: SQL injection
         for i, line in enumerate(lines, 1):
-            if _SQL_KEYWORDS.search(line):
+            if _SQL_KEYWORDS.search(line) and not _is_log_statement(line):
                 for pat in _SQL_INJECTION_PATTERNS:
                     if pat.search(line):
                         findings.append(Finding(
