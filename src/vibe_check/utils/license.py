@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 # Gumroad product permalink — set via env var or hardcode after creating product
-_GUMROAD_PRODUCT_ID = os.environ.get("VIBE_CHECK_PRODUCT_ID", "vibe-check-pro")
+_GUMROAD_PRODUCT_ID = os.environ.get("VIBE_CHECK_PRODUCT_ID", "0NHBAyNQ1UyAGTbsfjWsDA==")
 _GUMROAD_VERIFY_URL = "https://api.gumroad.com/v2/licenses/verify"
 
 # Cache license validation for 30 days so the tool works offline
