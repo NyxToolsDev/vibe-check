@@ -81,10 +81,7 @@ def scan(
     license_key: str | None,
 ) -> None:
     """Scan a project for production-readiness issues."""
-    # Import here to ensure scanners are registered
     from vibe_check.engine.runner import run_scan
-    from vibe_check.reporters import json_reporter, markdown
-    from vibe_check.reporters.terminal import render as terminal_render
 
     project_path = Path(path).resolve()
     licensed = check_license(license_key)
@@ -99,43 +96,61 @@ def scan(
         licensed=licensed,
     )
 
-    # Output
+    _emit_report(report, output_format, output_path)
+    _check_ci_threshold(report, ci, threshold, console)
+
+
+def _emit_report(
+    report: object, output_format: str, output_path: str | None,
+) -> None:
+    """Write the scan report in the requested format(s)."""
+    from vibe_check.reporters import json_reporter, markdown
+    from vibe_check.reporters.terminal import render as terminal_render
+
     if output_format in ("terminal", "all"):
         terminal_render(report)
 
     if output_format in ("json", "all"):
         json_str = json_reporter.render(report)
-        if output_path and output_format == "json":
-            _write_file(output_path, json_str)
-        elif output_format == "json":
-            click.echo(json_str)
-        elif output_format == "all" and output_path:
-            _write_file(f"{output_path}.json", json_str)
+        _route_output(json_str, output_format, output_path, "json")
 
     if output_format in ("markdown", "all"):
         md_str = markdown.render(report)
-        if output_path and output_format == "markdown":
-            _write_file(output_path, md_str)
-        elif output_format == "markdown":
-            click.echo(md_str)
-        elif output_format == "all" and output_path:
-            _write_file(f"{output_path}.md", md_str)
+        _route_output(md_str, output_format, output_path, "markdown")
 
-    # CI mode: exit non-zero if below threshold
-    if ci:
-        report_rank = _GRADE_ORDER.get(report.overall_grade, 0)
-        threshold_rank = _GRADE_ORDER.get(threshold, 3)
-        if report_rank < threshold_rank:
-            console.print(
-                f"[bold red]CI check failed:[/] Grade {report.overall_grade} "
-                f"is below threshold {threshold}"
-            )
-            sys.exit(1)
-        else:
-            console.print(
-                f"[bold green]CI check passed:[/] Grade {report.overall_grade} "
-                f"meets threshold {threshold}"
-            )
+
+def _route_output(
+    content: str, output_format: str, output_path: str | None, fmt: str,
+) -> None:
+    """Route rendered output to file or stdout."""
+    if output_path and output_format == fmt:
+        _write_file(output_path, content)
+    elif output_format == fmt:
+        click.echo(content)
+    elif output_format == "all" and output_path:
+        ext = "json" if fmt == "json" else "md"
+        _write_file(f"{output_path}.{ext}", content)
+
+
+def _check_ci_threshold(
+    report: object, ci: bool, threshold: str, console: Console,
+) -> None:
+    """Exit non-zero if the grade is below the CI threshold."""
+    if not ci:
+        return
+    report_rank = _GRADE_ORDER.get(report.overall_grade, 0)
+    threshold_rank = _GRADE_ORDER.get(threshold, 3)
+    if report_rank < threshold_rank:
+        console.print(
+            f"[bold red]CI check failed:[/] Grade {report.overall_grade} "
+            f"is below threshold {threshold}"
+        )
+        sys.exit(1)
+    else:
+        console.print(
+            f"[bold green]CI check passed:[/] Grade {report.overall_grade} "
+            f"meets threshold {threshold}"
+        )
 
 
 def _write_file(path: str, content: str) -> None:

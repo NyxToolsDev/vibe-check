@@ -93,6 +93,36 @@ class TestShellInjection:
         assert not any(f.rule_id == "SEC-009" for f in findings)
 
 
+class TestTestFileExclusion:
+    def test_skips_test_files_in_tests_dir(self, tmp_path: Path):
+        """Security scanner should skip files inside tests/ directories."""
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        code = 'API_KEY = "sk-abc123456789"'
+        fi = make_file(tmp_path, "tests/test_config.py", code)
+        scanner = SecurityScanner()
+        findings = scanner.scan([fi], {}, tmp_path)
+        assert not any(f.rule_id == "SEC-001" for f in findings)
+
+    def test_skips_test_prefixed_files(self, tmp_path: Path):
+        """test_*.py files should be excluded from security scanning."""
+        code = 'result = eval(user_input)'
+        fi = make_file(tmp_path, "test_dangerous.py", code)
+        scanner = SecurityScanner()
+        import ast
+        asts = {fi.path: ast.parse(code)}
+        findings = scanner.scan([fi], asts, tmp_path)
+        assert not any(f.rule_id == "SEC-003" for f in findings)
+
+    def test_still_scans_non_test_files(self, tmp_path: Path):
+        """Non-test files should still be scanned normally."""
+        code = 'API_KEY = "sk-abc123456789"'
+        fi = make_file(tmp_path, "config.py", code)
+        scanner = SecurityScanner()
+        findings = scanner.scan([fi], {}, tmp_path)
+        assert any(f.rule_id == "SEC-001" for f in findings)
+
+
 class TestEnvFile:
     def test_detects_env_file_without_gitignore(self, tmp_path: Path):
         (tmp_path / ".env").write_text("SECRET=value", encoding="utf-8")

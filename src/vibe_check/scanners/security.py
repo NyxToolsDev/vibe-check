@@ -84,11 +84,36 @@ _PATH_TRAVERSAL_PATTERNS: list[re.Pattern[str]] = [
 _ENV_FILE_PATTERN = re.compile(r"""^\.env(?:\.local|\.production|\.staging)?$""")
 
 
+_TEST_PATH_PATTERNS = re.compile(
+    r"""(?:^|[/\\])(?:tests?|__tests__|spec)[/\\]"""
+    r"""|(?:^|[/\\])test_[^/\\]+\.py$"""
+    r"""|(?:^|[/\\])[^/\\]+_test\.py$"""
+    r"""|(?:^|[/\\])[^/\\]+\.(?:test|spec)\.[jt]sx?$""",
+)
+
+
 def _rel(path: Path, base: Path) -> str:
     try:
         return str(path.relative_to(base))
     except ValueError:
         return str(path)
+
+
+def _is_test_file(fi: FileInfo, project_path: Path) -> bool:
+    """Check if a file is a test file (should be excluded from security scanning)."""
+    rel_path = _rel(fi.path, project_path)
+    return bool(_TEST_PATH_PATTERNS.search(rel_path))
+
+
+def _is_pattern_definition(line: str) -> bool:
+    """Check if a line is defining a regex pattern (not actual vulnerable code)."""
+    stripped = line.strip()
+    return (
+        stripped.startswith("re.compile(")
+        or stripped.startswith("(re.compile(")
+        or stripped.startswith("r\"\"\"")
+        or stripped.startswith("r'''")
+    )
 
 
 @register_scanner("security")
@@ -107,6 +132,8 @@ class SecurityScanner(BaseScanner):
     ) -> list[Finding]:
         findings: list[Finding] = []
         for fi in files:
+            if _is_test_file(fi, project_path):
+                continue
             try:
                 self._scan_file(fi, python_asts, project_path, findings)
             except Exception:
@@ -284,7 +311,7 @@ class SecurityScanner(BaseScanner):
         # SEC-008: Unsafe deserialization (pickle, yaml.load, marshal)
         if fi.language == "python":
             for i, line in enumerate(lines, 1):
-                if _UNSAFE_DESERIALIZE_PY.search(line):
+                if _UNSAFE_DESERIALIZE_PY.search(line) and not _is_pattern_definition(line):
                     findings.append(Finding(
                         rule_id="SEC-008",
                         category="security",
@@ -298,6 +325,8 @@ class SecurityScanner(BaseScanner):
 
         # SEC-009: Shell injection (subprocess shell=True, os.system, os.popen)
         for i, line in enumerate(lines, 1):
+            if _is_pattern_definition(line):
+                continue
             for pat, desc in _SHELL_INJECTION_PATTERNS:
                 if pat.search(line):
                     findings.append(Finding(
