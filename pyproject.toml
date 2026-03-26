@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vibe-check"
+version = "0.1.0"
+description = "Production-readiness scanner for AI/vibe-coded projects"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "NyxTools · LEW Enterprises LLC"},
+]
+keywords = [
+    "code-quality", "security-scanner", "production-readiness",
+    "vibe-coding", "ai-code", "hipaa", "healthcare", "static-analysis",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Security",
+]
+dependencies = [
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "pathspec>=0.11.0",
+    "httpx>=0.25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.4.0",
+    "mypy>=1.8.0",
+]
+
+[project.scripts]
+vibe-check = "vibe_check.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/NyxToolsDev/vibe-check"
+Issues = "https://github.com/NyxToolsDev/vibe-check/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
