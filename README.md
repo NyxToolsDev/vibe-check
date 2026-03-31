@@ -193,7 +193,7 @@ The overall score is a weighted average across all categories. Security is weigh
 
 Part of the [NyxTools](https://github.com/NyxToolsDev) suite of developer and healthcare IT tools.
 
-**NyxTools - LEW Enterprises LLC**
+**NyxTools - NyxTools**
 
 ## License
 
