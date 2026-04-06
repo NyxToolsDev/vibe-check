@@ -129,39 +129,34 @@ def get_env_var_references(tree: ast.Module) -> list[str]:
     """Find environment variable names referenced in the AST.
 
     Detects: os.environ["X"], os.environ.get("X"), os.getenv("X").
+    Single pass over the AST.
     """
     env_vars: list[str] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        # os.getenv("X")
-        if (
-            isinstance(func, ast.Attribute)
-            and func.attr == "getenv"
-            and isinstance(func.value, ast.Name)
-            and func.value.id == "os"
-        ):
-            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
-                env_vars.append(node.args[0].value)
-        # os.environ.get("X")
-        elif (
-            isinstance(func, ast.Attribute)
-            and func.attr == "get"
-            and isinstance(func.value, ast.Attribute)
-            and func.value.attr == "environ"
-            and isinstance(func.value.value, ast.Name)
-            and func.value.value.id == "os"
-        ):
-            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
-                env_vars.append(node.args[0].value)
+        # os.getenv("X") or os.environ.get("X") — Call nodes
+        if isinstance(node, ast.Call):
+            func = node.func
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == "getenv"
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "os"
+            ):
+                if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                    env_vars.append(node.args[0].value)
+            elif (
+                isinstance(func, ast.Attribute)
+                and func.attr == "get"
+                and isinstance(func.value, ast.Attribute)
+                and func.value.attr == "environ"
+                and isinstance(func.value.value, ast.Name)
+                and func.value.value.id == "os"
+            ):
+                if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                    env_vars.append(node.args[0].value)
 
-        # os.environ["X"] — shows up as Subscript, not Call
-        # handled below
-
-    # Also check Subscript access: os.environ["KEY"]
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Subscript):
+        # os.environ["X"] — Subscript node
+        elif isinstance(node, ast.Subscript):
             value = node.value
             if (
                 isinstance(value, ast.Attribute)
