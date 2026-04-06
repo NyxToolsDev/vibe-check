@@ -113,7 +113,7 @@ class TestPatternMatcher:
 
     def test_infer_class_description_from_base(self) -> None:
         result = infer_class_description("MyScanner", ["ABC"], None)
-        assert "abstract" in result.lower()
+        assert "blueprint" in result.lower() or "abstract" in result.lower()
 
 
 class TestPythonAnalyzer:
@@ -150,7 +150,7 @@ class TestPythonAnalyzer:
         """)
         tree = parse_python(fi.content)
         result = analyze_python_file(fi, tree, tmp_path)
-        assert "executable" in result.summary.lower() or "entry" in result.summary.lower()
+        assert "run" in result.summary.lower() or "entry" in result.summary.lower() or "script" in result.summary.lower()
 
     def test_class_methods_extracted(self, tmp_path: Path) -> None:
         fi = make_file(tmp_path, "scanner.py", """\

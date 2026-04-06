@@ -165,8 +165,15 @@ def _render_whats_inside(report: DecodeReport, lines: list[str]) -> None:
     lines.append("## What's Inside Each File")
     lines.append("")
     lines.append(
-        "This section breaks down the important files. "
-        "For each file, you'll see what it does and what the key pieces are."
+        "This section breaks down the important files. For each one, you'll see "
+        "what it does and the key pieces inside it."
+    )
+    lines.append("")
+    lines.append(
+        "> **Quick vocabulary:** A *function* is a named block of code that does one "
+        "specific job (like `get_user` fetches a user). A *class* is a blueprint that "
+        "groups related data and functions together (like a `User` class holds a user's "
+        "info and the things you can do with it)."
     )
     lines.append("")
 
@@ -197,12 +204,21 @@ def _render_friendly_file(fa: FileAnalysis, lines: list[str]) -> None:
         if cls.methods:
             lines.append("What it can do:")
             lines.append("")
-            for m in cls.methods:
+            # Group @property methods together instead of listing each one
+            properties = [m for m in cls.methods if "property" in m.decorators or "cached_property" in m.decorators]
+            non_properties = [m for m in cls.methods if m not in properties]
+
+            for m in non_properties:
                 if m.name.startswith("_") and m.name != "__init__":
                     continue  # Skip private methods for beginners
                 desc = m.description or m.name
                 lines.append(f"- `{m.name}` — {desc}")
-            private_count = sum(1 for m in cls.methods if m.name.startswith("_") and m.name != "__init__")
+
+            if properties:
+                prop_names = ", ".join(f"`{m.name}`" for m in properties)
+                lines.append(f"- Computed properties: {prop_names}")
+
+            private_count = sum(1 for m in non_properties if m.name.startswith("_") and m.name != "__init__")
             if private_count:
                 lines.append(f"- *...plus {private_count} internal helper(s)*")
             lines.append("")
@@ -212,17 +228,18 @@ def _render_friendly_file(fa: FileAnalysis, lines: list[str]) -> None:
     private_funcs = [f for f in fa.functions if f.name.startswith("_")]
 
     if public_funcs:
-        lines.append("**Key functions:**")
+        lines.append("**What you can do with this file:**")
         lines.append("")
         for func in public_funcs:
-            desc = func.description or func.name
+            desc = func.description or func.name.replace("_", " ")
             lines.append(f"- `{func.name}` — {desc}")
         lines.append("")
 
     if private_funcs:
         lines.append(
-            f"*There are also {len(private_funcs)} internal helper function(s) "
-            f"that support the ones above.*"
+            f"*Behind the scenes, there are also {len(private_funcs)} helper "
+            f"function(s) that do the internal work. You usually won't need to "
+            f"touch these directly.*"
         )
         lines.append("")
 
@@ -242,8 +259,9 @@ def _render_connections(report: DecodeReport, lines: list[str]) -> None:
     lines.append("## How Files Connect to Each Other")
     lines.append("")
     lines.append(
-        "No file works alone. Here's how they depend on each other. "
-        "If you change one file, the files listed under \"Used by\" might be affected."
+        "No file works alone — they depend on each other. This section shows you "
+        "which files talk to which. If you change a file, look at the \"needed by\" "
+        "list to see what else might be affected."
     )
     lines.append("")
 
@@ -251,16 +269,26 @@ def _render_connections(report: DecodeReport, lines: list[str]) -> None:
         if "__init__" in fa.path:
             continue
         short = _short_name(fa.path)
+        # Filter out __init__.py from dependency lists — they're noise
+        needs = [_short_name(p) for p in fa.calls_into if "__init__" not in p]
+        needed_by = [_short_name(p) for p in fa.called_by if "__init__" not in p]
+        # Deduplicate (same filename from different dirs)
+        needs = list(dict.fromkeys(needs))
+        needed_by = list(dict.fromkeys(needed_by))
+
+        if not needs and not needed_by:
+            continue
+
         lines.append(f"**`{short}`**")
-        if fa.calls_into:
+        if needs:
             lines.append(
-                "  \nPulls from: "
-                + ", ".join(f"`{_short_name(p)}`" for p in fa.calls_into)
+                "  \nNeeds: "
+                + ", ".join(f"`{n}`" for n in needs)
             )
-        if fa.called_by:
+        if needed_by:
             lines.append(
-                "  \nUsed by: "
-                + ", ".join(f"`{_short_name(p)}`" for p in fa.called_by)
+                "  \nNeeded by: "
+                + ", ".join(f"`{n}`" for n in needed_by)
             )
         lines.append("")
 
@@ -320,16 +348,25 @@ def _render_troubleshooting_tips(report: DecodeReport, lines: list[str]) -> None
 
     # Files with most connections (likely to cause cascading issues)
     most_used = sorted(
-        [fa for fa in report.files if fa.called_by],
+        [fa for fa in report.files if fa.called_by and "__init__" not in fa.path],
         key=lambda f: len(f.called_by),
         reverse=True,
     )[:3]
     if most_used:
-        names = ", ".join(f"`{_short_name(f.path)}`" for f in most_used)
-        lines.append(
-            f"- **Changes causing unexpected side effects?** These files are used "
-            f"by the most other files — changes here ripple: {names}"
-        )
+        # Deduplicate by filename
+        seen: set[str] = set()
+        unique_names: list[str] = []
+        for f in most_used:
+            short = _short_name(f.path)
+            if short not in seen:
+                seen.add(short)
+                unique_names.append(f"`{short}`")
+        if unique_names:
+            names = ", ".join(unique_names)
+            lines.append(
+                f"- **Changes causing unexpected side effects?** These files are used "
+                f"by the most other files — editing them may break things: {names}"
+            )
 
     lines.append("")
 

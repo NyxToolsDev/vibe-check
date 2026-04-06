@@ -53,16 +53,16 @@ def build_cross_references(
 
 
 def detect_entry_points(file_analyses: list[FileAnalysis]) -> list[str]:
-    """Identify entry points — files that are not imported by anything
-    or contain __main__ guards or CLI entry points.
+    """Identify entry points — files explicitly marked as entry points.
+
+    A file is an entry point if it has a __main__ guard, CLI decorators,
+    or a main() function. Being an orphan (no callers) alone is NOT enough
+    — many files are imported indirectly via __init__.py re-exports
+    (e.g., scanners, reporters) and would be false positives.
     """
     entry_points: list[str] = []
     for fa in file_analyses:
         if fa.entry_point:
-            entry_points.append(fa.path)
-            continue
-        # Files not imported by any other file (root nodes)
-        if not fa.called_by and fa.path.endswith(".py") and "__init__" not in fa.path:
             entry_points.append(fa.path)
     return sorted(entry_points)
 
