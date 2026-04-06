@@ -35,3 +35,7 @@ Thumbs.db
 .env.local
 .env.production
 .env.staging
+
+# Code guides (local only, never push)
+CODE-GUIDE.md
+*-CODE-GUIDE.md

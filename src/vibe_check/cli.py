@@ -153,6 +153,146 @@ def _check_ci_threshold(
         )
 
 
+_VALID_DECODE_FORMATS = ["terminal", "json", "markdown", "all"]
+_VALID_AI_BACKENDS = ["none", "claude", "openai-compat"]
+
+
+@main.command()
+@click.argument("path", default=".", type=click.Path(exists=True, file_okay=False))
+@click.option(
+    "--format", "-f",
+    "output_format",
+    type=click.Choice(_VALID_DECODE_FORMATS, case_sensitive=False),
+    default="markdown",
+    help="Output format (default: markdown for CODE-GUIDE.md).",
+)
+@click.option(
+    "--output", "-o",
+    "output_path",
+    type=click.Path(),
+    default=None,
+    help="Write report to file (default: CODE-GUIDE.md for markdown format).",
+)
+@click.option(
+    "--ai-backend",
+    "ai_backend_name",
+    type=click.Choice(_VALID_AI_BACKENDS, case_sensitive=False),
+    default="none",
+    help="AI backend for enhanced explanations (Pro feature).",
+)
+@click.option(
+    "--ai-url",
+    default=None,
+    help="Base URL for AI API (required for openai-compat backend).",
+)
+@click.option(
+    "--ai-key",
+    envvar="VIBE_DECODE_AI_KEY",
+    default=None,
+    help="API key for AI backend (or set VIBE_DECODE_AI_KEY).",
+)
+@click.option(
+    "--ai-model",
+    default=None,
+    help="Model name to use with AI backend.",
+)
+@click.option(
+    "--license-key",
+    envvar="VIBE_CHECK_LICENSE_KEY",
+    default=None,
+    help="License key for Pro features (or set VIBE_CHECK_LICENSE_KEY).",
+)
+def decode(
+    path: str,
+    output_format: str,
+    output_path: str | None,
+    ai_backend_name: str,
+    ai_url: str | None,
+    ai_key: str | None,
+    ai_model: str | None,
+    license_key: str | None,
+) -> None:
+    """Decode a project — generate plain-English code documentation.
+
+    Analyzes source files and produces a CODE-GUIDE.md explaining what
+    each file, function, and class does. Free tier uses static analysis;
+    Pro tier adds AI-enhanced explanations.
+
+    Examples:
+
+        vibe-check decode                      # Decode current directory
+        vibe-check decode ./my-project         # Decode specific project
+        vibe-check decode -f terminal          # Quick terminal summary
+        vibe-check decode --ai-backend claude  # AI-enhanced (Pro)
+    """
+    from vibe_check.decoder.runner import run_decode
+
+    project_path = Path(path).resolve()
+    licensed = check_license(license_key)
+
+    # Set up AI backend if requested
+    ai_backend = None
+    if ai_backend_name != "none":
+        if not licensed:
+            console = Console(stderr=True)
+            console.print(
+                "[bold yellow]AI-enhanced decode requires a Pro license.[/]\n"
+                "Purchase at: [link]https://nyxtools.gumroad.com/l/vibe-check-pro[/]\n"
+                "\n[dim]Running free-tier static analysis instead...[/]"
+            )
+        else:
+            from vibe_check.decoder.ai.factory import create_backend
+
+            ai_backend = create_backend(
+                backend=ai_backend_name,
+                url=ai_url,
+                key=ai_key,
+                model=ai_model,
+            )
+
+    console = Console(stderr=True)
+    console.print(f"[cyan]Decoding {project_path}...[/]")
+
+    report = run_decode(
+        project_path=project_path,
+        ai_backend=ai_backend,
+        licensed=licensed,
+    )
+
+    _emit_decode_report(report, output_format, output_path)
+
+
+def _emit_decode_report(
+    report: object, output_format: str, output_path: str | None,
+) -> None:
+    """Write the decode report in the requested format(s)."""
+    from vibe_check.decoder.reporters import json_reporter, markdown
+    from vibe_check.decoder.reporters.terminal import render as terminal_render
+
+    if output_format in ("terminal", "all"):
+        terminal_render(report)
+
+    if output_format in ("json", "all"):
+        json_str = json_reporter.render(report)
+        if output_format == "json":
+            target = output_path or None
+            if target:
+                _write_file(target, json_str)
+            else:
+                click.echo(json_str)
+        elif output_format == "all" and output_path:
+            _write_file(f"{output_path}.json", json_str)
+
+    if output_format in ("markdown", "all"):
+        md_str = markdown.render(report)
+        if output_format == "markdown":
+            target = output_path or "CODE-GUIDE.md"
+            _write_file(target, md_str)
+        elif output_format == "all":
+            target = f"{output_path}.md" if output_path else "CODE-GUIDE.md"
+            _write_file(target, md_str)
+
+
 @main.command()
 @click.argument("license_key")
 def activate(license_key: str) -> None:
